@@ -77,10 +77,29 @@ app.post('/slack/interactions', async (req, res) => {
     const payload = JSON.parse(req.body.payload);
 
     if (payload.type === 'view_submission') {
-        const approvalText = payload.view.state.values.approval_reason.text.value; // extract the approval reason from the modal submission
+        const approver = payload.view.state.values.approver_select.approver.selected_option.value; // get the approver id from the modal
+        const approvalText = payload.view.state.values.approval_reason.text.value; // get the approval reason from the modal
+        const requester = payload.user.id; // get user id of the person who submitted the modal
 
-        console.log('Approval Request Submitted:', approvalText); // log the approval reason
-        res.json({ response_action: 'clear' }); // clears the modal after submission
+        // message to approver for action
+        await slackClient.chat.postMessage({
+            channel: approver, // dm to the approver via ApprovalBot app
+            text: `New approval request from <@${requester}>: ${approvalText}`,
+            // ui for the approval message
+            attachments: [
+                {
+                    text: 'Do you approve?',
+                    fallback: 'You must approve or reject',
+                    callback_id: 'approval_action',
+                    actions: [
+                        { name: 'approve', text: 'Approve', type: 'button', value: 'approved' },
+                        { name: 'reject', text: 'Reject', type: 'button', value: 'rejected' }
+                    ]
+                }
+            ]
+        });
+
+        res.json({ response_action: 'clear' });
     }
 });
 
