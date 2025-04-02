@@ -1,0 +1,19 @@
+{
+  "name": "test",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@slack/web-api": "^7.9.1",
+    "axios": "^1.8.4",
+    "body-parser": "^2.2.0",
+    "dotenv": "^16.4.7",
+    "express": "^5.1.0"
+  }
+}
