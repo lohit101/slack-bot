@@ -14,6 +14,16 @@ app.use(express.json());
 app.use(bodyParser.urlencoded({ extended: true })); // for parsing application/x-www-form-urlencoded
 app.use(bodyParser.json()); // for parsing application/json
 
+// fetch usrs for dropdown
+async function getSlackUsers() {
+    const response = await slackClient.users.list(); // get list of users
+
+    // return array of users (for including in the modal dropdown)
+    return response.members
+        .filter(user => !user.is_bot && user.id !== 'USLACKBOT') // filter out bots
+        .map(user => ({ text: { type: 'plain_text', text: user.name }, value: user.id })); // map to required format
+}
+
 // home route
 app.get('/', (req, res) => {
     res.send('Bot is running!');
@@ -21,8 +31,8 @@ app.get('/', (req, res) => {
 
 // command endpoint for slash command [/approval-test]
 app.post('/slack/command', async (req, res) => {
-    // get trigger id for opening modal
-    const trigger_id = req.body.trigger_id;
+    const trigger_id = req.body.trigger_id; // get trigger id for opening modal
+    const users = await getSlackUsers(); // get list of users for dropdown
 
     // open modal with trigger id
     try {
@@ -37,6 +47,12 @@ app.post('/slack/command', async (req, res) => {
                     text: 'Approval Request'
                 },
                 blocks: [
+                    {
+                        type: 'input',
+                        block_id: 'approver_select',
+                        label: { type: 'plain_text', text: 'Select Approver' },
+                        element: { type: 'static_select', action_id: 'approver', options: users } // pass filtered users to the modal dropdown
+                    },
                     {
                         type: 'input',
                         block_id: 'approval_reason',
