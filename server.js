@@ -1,6 +1,3 @@
-// load environment variables from .env.local file for now
-// NOTE FOR SELF:
-// remove "{ path: '.env.local' }" when deploying to production
 require('dotenv').config({ path: '.env.local' });
 
 const express = require('express');
@@ -131,7 +128,7 @@ app.post('/slack/interactions', async (req, res) => {
             // APPROVAL LOGIC HERE:
             // add more code ehre to handle the approval logic according to your needs
             // for this application i am just adding the approved user to a hidden channel and notifying the users
-            
+
             // check if the action is approved or rejected
             if (action === 'approved') {
                 // invite the approved user to the hidden channel
