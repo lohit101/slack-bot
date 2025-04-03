@@ -24,6 +24,10 @@ A **Slack bot** that streamlines approval requests within a workspace. Users can
 - Approval requests are temporarily stored for tracking decisions.
 - Ensures smooth handling of multiple simultaneous requests.
 
+## Architecture Diagram
+
+![Architecture Diagram](./lib/screenshots/architecture.png)
+
 ## Installation & Setup
 
 ### 1️ Prerequisites

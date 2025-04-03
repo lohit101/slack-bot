@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node server.js",
+    "test": "cross-env NODE_ENV=test jest --coverage"
   },
   "keywords": [],
   "author": "",
@@ -13,7 +14,12 @@
     "@slack/web-api": "^7.9.1",
     "axios": "^1.8.4",
     "body-parser": "^2.2.0",
-    "dotenv": "^16.4.7",
     "express": "^5.1.0"
+  },
+  "devDependencies": {
+    "cross-env": "^7.0.3",
+    "dotenv": "^16.4.7",
+    "jest": "^29.7.0",
+    "supertest": "^7.1.0"
   }
 }

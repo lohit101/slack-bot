@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config({ path: '.env.local' });
 
 const express = require('express');
 const { WebClient } = require('@slack/web-api');
@@ -22,7 +22,7 @@ async function getAdminUsers() {
 
         // return array of users (for including in the modal dropdown)
         return response.members
-            .filter(user => !user.is_bot && user.id !== 'USLACKBOT' && !user.name.startsWith('deactivateduser') && user.is_admin) // filter out bots and deactivated users and only show the admins in the dropdows
+            .filter(user => !user.is_bot && user.is_admin) // filter out bots and deactivated users and only show the admins in the dropdows
             .map(user => ({ text: { type: 'plain_text', text: user.name }, value: user.id })); // map to required format
     } catch (error) {
         console.error('Error fetching users:', error); // handle error properly
@@ -32,7 +32,7 @@ async function getAdminUsers() {
 
 // home route
 app.get('/', (req, res) => {
-    res.send('Bot is running!');
+    return res.send('Bot is running!');
 });
 
 // command endpoint for slash command [/approval-test]
@@ -41,6 +41,16 @@ app.post('/slack/command', async (req, res) => {
     try {
         const trigger_id = req.body.trigger_id; // get trigger id for opening modal
         const users = await getAdminUsers(); // get list of users for dropdown
+
+        // handle invalid trigger id
+        if (!trigger_id) {
+            return res.status(400).send('Invalid trigger ID');
+        }
+
+        // handle empty user list
+        if (!users || users.length === 0) {
+            return res.status(400).send('No approvers found');
+        }
 
         await slackClient.views.open({
             trigger_id, // requires this param to open the modal according to the docs
@@ -70,10 +80,10 @@ app.post('/slack/command', async (req, res) => {
             }
         });
 
-        res.send(''); // send empty response to acknowledge the command
+        return res.status(200).send(); // send empty response to acknowledge the command
     } catch (error) {
         console.error('Error opening modal:', error);
-        res.status(500).send('Error opening modal'); // log and respond with error
+        return res.status(500).send('Error opening modal'); // log and respond with error
     }
 });
 
@@ -83,42 +93,60 @@ app.post('/slack/interactions', async (req, res) => {
         // get payload details
         const payload = JSON.parse(req.body.payload);
 
+        if (!payload) {
+            return res.status(400).send('Invalid payload'); // handle invalid payload
+        }
+
         if (payload.type === 'view_submission') {
             const approver = payload.view.state.values.approver_select.approver.selected_option.value; // get the approver id from the modal
             const approvalText = payload.view.state.values.approval_reason.text.value; // get the approval reason from the modal
             const requester = payload.user.id; // get user id of the person who submitted the modal
 
+            // check if approver is valid and not the same as requester
+            if (!approver || !approvalText || !requester || approver === requester) {
+                return res.status(400).send('Invalid approver/requester or approval text missing.'); // handle invalid approver, requester or approval text
+            }
+
             // store requester info so we can notify later
             const requestId = `request_${Date.now()}`; // unique id for the request
             pendingRequests[requestId] = { requester, approvalText };
 
-            // message to approver for action
-            await slackClient.chat.postMessage({
-                channel: approver, // dm to the approver via ApprovalBot app
-                text: `New approval request from <@${requester}>: ${approvalText}`,
-                // ui for the approval message
-                attachments: [
-                    {
-                        text: 'Do you approve?',
-                        fallback: 'You must approve or reject',
-                        callback_id: requestId, // use the request id as callback id so we can identify the request later (wasted like 30 mins on this)
-                        actions: [
-                            { name: 'approve', text: 'Approve', type: 'button', value: 'approved' },
-                            { name: 'reject', text: 'Reject', type: 'button', value: 'rejected' }
-                        ]
-                    }
-                ]
-            });
+            try {
+                // message to approver for action
+                await slackClient.chat.postMessage({
+                    channel: approver, // dm to the approver via ApprovalBot app
+                    text: `New approval request from <@${requester}>: ${approvalText}`,
+                    // ui for the approval message
+                    attachments: [
+                        {
+                            text: 'Do you approve?',
+                            fallback: 'You must approve or reject',
+                            callback_id: requestId, // use the request id as callback id so we can identify the request later (wasted like 30 mins on this)
+                            actions: [
+                                { name: 'approve', text: 'Approve', type: 'button', value: 'approved' },
+                                { name: 'reject', text: 'Reject', type: 'button', value: 'rejected' }
+                            ]
+                        }
+                    ]
+                });
 
-            res.json({ response_action: 'clear' }); // send response to clear the modal
+                return res.status(200).json({ response_action: 'clear' }); // send response to clear the modal
+            } catch (error) {
+                console.error('Error sending message to approver:', error);
+                return res.status(500).send('Error sending message to approver'); // log and respond with error
+            }
 
         } else if (payload.type === 'interactive_message') { // Handle button clicks 
             const { callback_id: requestId, actions, user, channel, message_ts } = payload;
             const action = payload.actions[0].value; // get the value of the interaction
 
+            if (!action || !requestId) {
+                return res.status(400).send('Invalid action or request ID'); // handle invalid action or request id
+            }
+
             // handle expired or invalid requests
             if (!pendingRequests[requestId]) {
-                return res.send('Request not found or already processed.');
+                return res.status(400).send('Request not found or already processed.');
             }
 
             const { requester, approvalText } = pendingRequests[requestId]; // get the requester info which we stored earlier
@@ -137,40 +165,45 @@ app.post('/slack/interactions', async (req, res) => {
                         channel: process.env.HIDDEN_CHANNEL_ID, // channel ID in which the approved user gets added
                         users: requester // user requesting for approval
                     });
+
+                    // using promise all to send both messages in parallel since they are
+                    // independent of each other and do not require each other to be completed first
+
+                    // notify the requester and update the message to the approver
+                    await Promise.all([
+                        // notify the requester
+                        await slackClient.chat.postMessage({
+                            channel: requester, // dm to the requester
+                            text: `Your approval request *"${approvalText}"* has been ${responseText}`
+                        }),
+                        // confirm action to approver by updating the message
+                        await slackClient.chat.update({
+                            channel: payload.channel.id, // same channel as the original message (approver dm)
+                            ts: payload.message_ts, // message timestamp
+                            text: `Approval request from <@${requester}>: *${approvalText}*`,
+                            attachments: [{ text: responseText }]
+                        }),
+                    ])
+
+                    delete pendingRequests[requestId]; // Remove request from memory
+                    return res.status(200).send(); // send empty response to acknowledge the action
                 } catch (error) {
                     console.error(`Error adding user to hidden channel:`, error); // log errors to console
                 }
             }
-
-            // using promise all to send both messages in parallel since they are
-            // independent of each other and do not require each other to be completed first
-
-            // notify the requester and update the message to the approver
-            await Promise.all([
-                // notify the requester
-                await slackClient.chat.postMessage({
-                    channel: requester, // dm to the requester
-                    text: `Your approval request *"${approvalText}"* has been ${responseText}`
-                }),
-                // confirm action to approver by updating the message
-                await slackClient.chat.update({
-                    channel: payload.channel.id, // same channel as the original message (approver dm)
-                    ts: payload.message_ts, // message timestamp
-                    text: `Approval request from <@${requester}>: *${approvalText}*`,
-                    attachments: [{ text: responseText }]
-                }),
-            ])
-
-            delete pendingRequests[requestId]; // Remove request from memory
-            res.send(''); // send empty response to acknowledge the action
         }
     } catch (error) {
         console.error('Error processing interaction:', error);
-        res.status(500).send('Error processing interaction'); // log and return error response if error occurs
+        return res.status(500).send('Error processing interaction'); // log and respond with error
     }
 });
 
-// start server
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-});
+// export app for testing
+module.exports = app;
+
+// start server only if not in test mode
+if (process.env.NODE_ENV !== 'test') {
+    app.listen(PORT, () => {
+        console.log(`Server running on port ${PORT}`);
+    });
+}
