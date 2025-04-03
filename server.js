@@ -1,4 +1,5 @@
-require('dotenv').config({ path: '.env.local' });
+// require('dotenv').config({ path: '.env.local' }); // use this if you are running locally
+require('dotenv').config(); // use this if you are running in production
 
 const express = require('express');
 const { WebClient } = require('@slack/web-api');
@@ -32,7 +33,7 @@ async function getAdminUsers() {
 
 // home route
 app.get('/', (req, res) => {
-    return res.send('Bot is running!');
+    return res.status(200).send('Bot is running!');
 });
 
 // command endpoint for slash command [/approval-test]
@@ -91,10 +92,11 @@ app.post('/slack/command', async (req, res) => {
 app.post('/slack/interactions', async (req, res) => {
     try {
         // get payload details
-        const payload = JSON.parse(req.body.payload);
+        const payload = JSON.parse(req.body?.payload || "{}"); // parse the payload from the request body
 
+        // handle invalid payload
         if (!payload) {
-            return res.status(400).send('Invalid payload'); // handle invalid payload
+            return res.status(400).send('Invalid payload');
         }
 
         if (payload.type === 'view_submission') {
@@ -198,8 +200,8 @@ app.post('/slack/interactions', async (req, res) => {
     }
 });
 
-// export app for testing
-module.exports = app;
+// export app and other functions for testing
+module.exports = { app, getAdminUsers, pendingRequests };
 
 // start server only if not in test mode
 if (process.env.NODE_ENV !== 'test') {
