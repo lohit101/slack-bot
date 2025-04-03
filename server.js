@@ -21,7 +21,7 @@ async function getSlackUsers() {
 
     // return array of users (for including in the modal dropdown)
     return response.members
-        .filter(user => !user.is_bot && user.id !== 'USLACKBOT') // filter out bots
+        .filter(user => !user.is_bot && user.id !== 'USLACKBOT' && !user.name.startsWith('deactivateduser') && user.is_admin) // filter out bots and deactivated users and only show the admins in the dropdows
         .map(user => ({ text: { type: 'plain_text', text: user.name }, value: user.id })); // map to required format
 }
 
